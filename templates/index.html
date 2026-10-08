@@ -1,0 +1,54 @@
+<!doctype html><html lang="uz"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Dorixona ombori</title>
+<style>
+:root{--bg:#f3f6f4;--card:#fff;--ink:#14261e;--mut:#5d7169;--g:#0b6b4f;--r:#b3261e;--o:#a15c00;--ln:#d5dfda;color-scheme:light dark}
+@media(prefers-color-scheme:dark){:root{--bg:#0f1a15;--card:#16261f;--ink:#e6efe9;--mut:#93a89d;--g:#4cc39a;--r:#ff8a80;--o:#ffb74d;--ln:#294036}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 "Segoe UI",system-ui,sans-serif}
+header{display:flex;gap:12px;align-items:center;padding:14px 20px;background:var(--g);color:#fff;flex-wrap:wrap}
+header h1{font-size:18px;margin:0;flex:1}header button{background:#ffffff26;color:#fff}
+main{max-width:1000px;margin:auto;padding:16px}nav{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
+button,input,select{font:inherit;padding:8px 12px;border:1px solid var(--ln);border-radius:6px;background:var(--card);color:var(--ink)}
+button{cursor:pointer}button.on,button.p{background:var(--g);color:#fff;border-color:var(--g)}button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--g);outline-offset:2px}
+.card{background:var(--card);border:1px solid var(--ln);border-radius:8px;padding:14px;margin-bottom:12px;overflow-x:auto}
+table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:7px 8px;border-bottom:1px solid var(--ln);white-space:nowrap}th{color:var(--mut);font-weight:600}
+.bad{color:var(--r);font-weight:600}.warn{color:var(--o);font-weight:600}.err{color:var(--r)}.row{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}.hide{display:none}
+#login{max-width:340px;margin:12vh auto}#login input{width:100%;margin-bottom:8px}
+</style></head><body>
+<div id="login" class="card"><h2>Dorixona ombori</h2><input id="u" placeholder="Login"><input id="p" type="password" placeholder="Parol"><button class="p" onclick="login()">Kirish</button><p id="le" class="err"></p></div>
+<div id="app" class="hide"><header><h1>Dorixona qoldig'i va muddat nazorati</h1><span id="who"></span><button onclick="logout()">Chiqish</button></header>
+<main><nav id="tabs"></nav><div id="view"></div></main></div>
+<script>
+let T=localStorage.getItem('t'),ME=null;const $=id=>document.getElementById(id);
+const days=s=>Math.round((new Date(s)-new Date(new Date().toDateString()))/864e5);
+async function api(path,opt={}){const r=await fetch('/api'+path,{...opt,headers:{'Content-Type':'application/json',Authorization:'Bearer '+T}});
+ if(r.status==401){logout();return{}}const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.detail||JSON.stringify(d));return d}
+async function login(){const r=await fetch('/api/auth/login/',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:$('u').value,password:$('p').value})});
+ const d=await r.json();if(!r.ok){$('le').textContent="Login yoki parol noto'g'ri";return}T=d.access;localStorage.setItem('t',T);init()}
+function logout(){localStorage.removeItem('t');location.reload()}
+const TABS={stock:'Qoldiq',exp:'Muddati tugayotganlar',out:'Chiqim yozish',low:'Minimal qoldiq',mov:'Harakatlar',inn:'Kirim (admin)',rep:'Hisobot (admin)'};
+async function init(){try{ME=await api('/auth/me/')}catch(e){return logout()}$('login').classList.add('hide');$('app').classList.remove('hide');
+ $('who').textContent=ME.full_name||ME.username;
+ $('tabs').innerHTML=Object.entries(TABS).filter(([k])=>ME.role=='admin'||!['inn','rep'].includes(k)).map(([k,v])=>`<button id="t_${k}" onclick="show('${k}')">${v}</button>`).join('');show('stock')}
+const tbl=(h,rows)=>`<div class="card"><table><tr>${h.map(x=>`<th>${x}</th>`).join('')}</tr>${rows.map(r=>`<tr>${r.map(c=>`<td>${c}</td>`).join('')}</tr>`).join('')||`<tr><td colspan=9>Ma'lumot yo'q</td></tr>`}</table></div>`;
+const dl=s=>{const k=days(s);return `<span class="${k<0?'bad':k<30?'warn':''}">${s} (${k<0?"MUDDATI O'TGAN":k+' kun'})</span>`};
+async function show(k){document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on',b.id=='t_'+k));const v=$('view');v.innerHTML='Yuklanmoqda…';
+ try{
+ if(k=='stock'){v.innerHTML=`<div class="row"><input id="q" placeholder="Nom yoki shtrix kod" oninput="find()"></div><div id="res"></div>`;find()}
+ if(k=='exp'){v.innerHTML=`<div class="row"><select id="d" onchange="exp()"><option>7<option selected>30<option>90</select> kun</div><div id="res"></div>`;exp()}
+ if(k=='low'){const d=await api('/stock/low/');v.innerHTML=tbl(['Dori','Qoldiq','Minimal'],d.results.map(m=>[m.name,m.qoldiq+' '+m.unit,m.min_qoldiq]))}
+ if(k=='mov'){const d=await api('/stock/movements/');v.innerHTML=tbl(['Sana','Tur','Dori','Partiya','Miqdor'],d.results.map(m=>[m.sana,m.tur+(m.sabab?' ('+m.sabab+')':''),m.dori,m.partiya,m.miqdor]))}
+ if(k=='out'||k=='inn'){const b=await api('/batches/?ordering=yaroqlilik_sanasi'),o=b.results.filter(x=>k=='inn'||+x.qoldiq>0).map(x=>`<option value="${x.id}">${x.dori_nomi} — ${x.partiya_raqami} (qoldiq ${x.qoldiq}, ${x.yaroqlilik_sanasi})`).join('');
+  v.innerHTML=`<div class="card"><div class="row"><select id="b">${o}</select><input id="m" type="number" step="0.01" min="0.01" placeholder="Miqdor">
+  ${k=='out'?`<select id="s"><option value="sotuv">Sotuv<option value="qaytarish">Qaytarish<option value="yaroqsiz">Yaroqsiz</select><input id="iz" placeholder="Izoh (yaroqsiz uchun majburiy)">`:`<input id="iz" placeholder="Hujjat raqami">`}
+  <button class="p" onclick="send('${k}')">Yozish</button></div><p id="msg"></p></div>`}
+ if(k=='rep'){const d=await api('/reports/summary/');v.innerHTML=tbl(['Dorilar soni','Ombor qiymati',"Muddati yaqinlar"],[[d.dorilar_soni,d.ombor_qiymati,d.muddati_yaqinlar]])}
+ }catch(e){v.innerHTML=`<p class="err">${e.message}</p>`}}
+async function find(){const q=$('q').value,d=await api('/medicines/?search='+encodeURIComponent(q));
+ $('res').innerHTML=tbl(['Dori','Shtrix kod','Ishlab chiqaruvchi','Qoldiq'],d.results.map(m=>[`<a href="#" onclick="det(${m.id});return false">${m.name}</a>`,m.barcode,m.manufacturer,m.qoldiq+' '+m.unit]))}
+async function det(id){const m=await api('/medicines/'+id+'/');$('res').innerHTML=`<h3>${m.name}: ${m.qoldiq} ${m.unit}</h3>`+tbl(['Partiya','Qoldiq','Narx','Yaroqlilik'],m.partiyalar.map(b=>[b.partiya_raqami,b.qoldiq,b.sotuv_narxi,dl(b.yaroqlilik_sanasi)]))}
+async function exp(){const d=await api('/stock/expiring/?days='+$('d').value);$('res').innerHTML=tbl(['Dori','Partiya','Qoldiq','Yaroqlilik'],d.results.map(b=>[b.dori_nomi,b.partiya_raqami,b.qoldiq,dl(b.yaroqlilik_sanasi)]))}
+async function send(k){const body={partiya:+$('b').value,miqdor:$('m').value,sana:new Date().toISOString().slice(0,10)};
+ if(k=='out'){body.sabab=$('s').value;body.izoh=$('iz').value}else body.hujjat_raqami=$('iz').value;
+ try{const r=await api(k=='out'?'/stock-out/':'/stock-in/',{method:'POST',body:JSON.stringify(body)});$('msg').textContent='Yozildi'+(r.yangi_qoldiq!==undefined?'. Yangi qoldiq: '+r.yangi_qoldiq:'');$('msg').className=''}
+ catch(e){$('msg').textContent=e.message;$('msg').className='err'}}
+if(T)init();
+</script></body></html>

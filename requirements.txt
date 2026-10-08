@@ -1,0 +1,10 @@
+Django>=5.0
+djangorestframework
+djangorestframework-simplejwt
+psycopg2-binary
+celery[redis]
+django-celery-beat
+python-dotenv
+requests
+aiogram>=3.4
+httpx
